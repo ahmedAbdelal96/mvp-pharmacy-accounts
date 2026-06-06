@@ -114,7 +114,16 @@ model Party {
 // AccountTransaction
 // ============================================================
 // SOURCE OF TRUTH for all party balances.
-// Balance = sum(PARTY_OWES_US) - sum(WE_OWE_PARTY) for POSTED transactions only.
+//
+// Balance calculation:
+//   netBalance = sum(PARTY_OWES_US where status=POSTED)
+//              - sum(WE_OWE_PARTY where status=POSTED)
+//
+// IMPORTANT: Only status=POSTED transactions affect balance.
+// REVERSED transactions are excluded from balance calculation.
+// The reversalTransactionId link is for UI purposes only (linking
+// original to reversal in the audit trail), NOT for balance calculation.
+//
 // Posted transactions are IMMUTABLE. Corrections via reversal only.
 // ============================================================
 
