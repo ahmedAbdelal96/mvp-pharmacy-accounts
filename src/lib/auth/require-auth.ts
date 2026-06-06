@@ -10,6 +10,8 @@
  * - Always fetches fresh user from database
  */
 
+import "server-only";
+
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "./get-current-user";
 import { hasPermission } from "@/lib/permissions";

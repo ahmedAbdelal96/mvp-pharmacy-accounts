@@ -9,8 +9,10 @@
  * - Cookie is SameSite=Strict
  * - Token is signed — tamper-proof
  * - No sensitive data stored in the cookie itself
+ * - AUTH_SECRET is required in production (throws if missing)
  */
 
+import "server-only";
 import { cookies } from "next/headers";
 import { createHmac } from "crypto";
 
@@ -18,7 +20,17 @@ const SESSION_COOKIE = "pa_session";
 const SESSION_MAX_AGE = 7 * 24 * 60 * 60; // 7 days in seconds
 
 function getSecret(): string {
-  const secret = process.env.AUTH_SECRET ?? "dev-secret-change-in-production";
+  const secret = process.env.AUTH_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        "AUTH_SECRET environment variable is required in production. " +
+          "Generate one with: openssl rand -base64 32"
+      );
+    }
+    // Development fallback only — never use in production
+    return "dev-secret-change-in-production";
+  }
   return secret;
 }
 

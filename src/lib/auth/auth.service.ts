@@ -5,6 +5,8 @@
  * Never exposes passwordHash to the client.
  */
 
+import "server-only";
+
 import { compare } from "bcryptjs";
 import prisma from "@/lib/prisma";
 import type { SessionUser } from "@/modules/auth/auth.types";

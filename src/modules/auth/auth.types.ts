@@ -27,6 +27,13 @@ export interface SessionUser {
 
 // ─── Permission Types ────────────────────────────────────────
 
+/**
+ * Available permissions in the system.
+ *
+ * settings.view — read-only access to general settings.
+ *                 Does NOT include: settings.update, user management,
+ *                 role changes, or any write operations.
+ */
 export type Permission =
   | "party.view"
   | "party.create"

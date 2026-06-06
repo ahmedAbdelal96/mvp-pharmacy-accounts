@@ -76,10 +76,23 @@ npm install
 ```bash
 # Copy the example env file
 cp .env.example .env
-
-# Edit .env and set your PostgreSQL connection string
-# DATABASE_URL="postgresql://user:password@localhost:5432/pharmacy_accounts"
 ```
+
+**Required in `.env`:**
+```bash
+# PostgreSQL connection string
+DATABASE_URL="postgresql://user:password@localhost:5432/pharmacy_accounts"
+
+# Auth signing secret — REQUIRED in production
+# Generate with: openssl rand -base64 32
+AUTH_SECRET=""
+
+# App URL
+NEXT_PUBLIC_APP_URL="http://localhost:3000"
+```
+
+> ⚠️ In production (`NODE_ENV=production`), the app will **throw** if `AUTH_SECRET` is not set.
+> In development, it falls back to a dev-only secret (do not use in production).
 
 ### 4. Run Database Migration
 

@@ -8,6 +8,8 @@
  * - Falls back to null if no valid session
  */
 
+import "server-only";
+
 import prisma from "@/lib/prisma";
 import { getSession } from "./session";
 import type { SessionUser } from "@/modules/auth/auth.types";
