@@ -1,0 +1,178 @@
+// ============================================================
+// Pharmacy Accounts Lite — MVP Database Schema
+// ============================================================
+// Scope: Parties + Account Transactions + Statements + Simple Reports
+// Forbidden: Inventory, POS, Products, Branches, Full Accounting
+// ============================================================
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================
+// Enums
+// ============================================================
+
+enum UserRole {
+  OWNER
+  ACCOUNTANT
+  VIEWER
+}
+
+enum PartyType {
+  SUPPLIER
+  CUSTOMER
+  MEDICINE_COMPANY
+  OTHER
+}
+
+enum PartyStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum AccountTransactionType {
+  OPENING_BALANCE
+  DEBT
+  PAYMENT_OUT
+  COLLECTION_IN
+  ADJUSTMENT
+  DISCOUNT
+}
+
+enum AccountTransactionDirection {
+  /// Party owes us (عليه)
+  PARTY_OWES_US
+  /// We owe party (له)
+  WE_OWE_PARTY
+}
+
+enum AccountTransactionStatus {
+  POSTED
+  REVERSED
+}
+
+// ============================================================
+// User
+// ============================================================
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         UserRole  @default(VIEWER)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relations
+  createdParties        Party[]             @relation("PartyCreatedBy")
+  createdTransactions   AccountTransaction[] @relation("TransactionCreatedBy")
+  reversedTransactions  AccountTransaction[] @relation("TransactionReversedBy")
+  auditLogs            AuditLog[]
+}
+
+// ============================================================
+// Party
+// ============================================================
+// IMPORTANT: Party does NOT have a balance field.
+// Balance is calculated ONLY from AccountTransaction records.
+// AccountTransaction is the source of truth for all balances.
+// ============================================================
+
+model Party {
+  id            String       @id @default(cuid())
+  name          String
+  type          PartyType
+  phone         String?
+  address       String?
+  contactPerson String?
+  notes         String?
+  status        PartyStatus  @default(ACTIVE)
+  createdById   String
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  // Relations
+  createdBy      User                 @relation("PartyCreatedBy", fields: [createdById], references: [id])
+  transactions   AccountTransaction[]
+
+  // Indexes
+  @@index([name])
+  @@index([type])
+  @@index([status])
+  @@index([phone])
+}
+
+// ============================================================
+// AccountTransaction
+// ============================================================
+// SOURCE OF TRUTH for all party balances.
+// Balance = sum(PARTY_OWES_US) - sum(WE_OWE_PARTY) for POSTED transactions only.
+// Posted transactions are IMMUTABLE. Corrections via reversal only.
+// ============================================================
+
+model AccountTransaction {
+  id                  String                      @id @default(cuid())
+  partyId             String
+  transactionNumber   String                      @unique // Generated server-side
+  type                AccountTransactionType
+  direction           AccountTransactionDirection
+  status              AccountTransactionStatus    @default(POSTED)
+  amount              Decimal                     @db.Decimal(18, 2) // Always > 0
+  transactionDate     DateTime
+  description         String
+  referenceNumber     String?
+  notes               String?
+  // Reversal fields
+  reversedById        String?
+  reversedAt          DateTime?
+  reversalReason      String?
+  reversalTransactionId String?                  @unique
+  // Audit
+  createdById         String
+  createdAt           DateTime                   @default(now())
+  updatedAt           DateTime                   @updatedAt
+
+  // Relations
+  party               Party                      @relation(fields: [partyId], references: [id])
+  createdBy           User                       @relation("TransactionCreatedBy", fields: [createdById], references: [id])
+  reversedBy          User?                      @relation("TransactionReversedBy", fields: [reversedById], references: [id])
+  reversalOf          AccountTransaction?        @relation("ReversalLink", fields: [reversalTransactionId], references: [id])
+  reversedTransaction AccountTransaction?       @relation("ReversalLink")
+
+  // Indexes
+  @@index([partyId])
+  @@index([transactionDate])
+  @@index([type])
+  @@index([direction])
+  @@index([status])
+  @@index([createdById])
+}
+
+// ============================================================
+// AuditLog — Optional for MVP
+// ============================================================
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  action     String   // e.g. "CREATE_PARTY", "REVERSE_TRANSACTION"
+  entityType String   // e.g. "Party", "AccountTransaction"
+  entityId   String
+  metadata   Json?    // Additional context
+  createdAt  DateTime @default(now())
+
+  // Relations
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([action])
+}
