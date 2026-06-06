@@ -3,21 +3,26 @@
 import { useActionState } from "react";
 import Link from "next/link";
 import {
-  createPartyAction,
+  updatePartyAction,
   type ActionState,
 } from "@/modules/parties/party.actions";
+import type { PartyDetails } from "@/modules/parties/party.mappers";
 
-export default function NewPartyPage() {
+export default function EditPartyClient({
+  party,
+}: {
+  party: PartyDetails;
+}) {
   const [state, formAction, isPending] = useActionState<
     ActionState | null,
     FormData
-  >(createPartyAction, null);
+  >(updatePartyAction, null);
 
   return (
     <div>
       <div className="page-header">
-        <h2 className="page-title">إضافة طرف جديد</h2>
-        <p className="page-description">إضافة عميل أو مورد أو شركة أدوية</p>
+        <h2 className="page-title">تعديل طرف</h2>
+        <p className="page-description">تعديل بيانات: {party.name}</p>
       </div>
 
       <div className="card max-w-xl">
@@ -28,6 +33,9 @@ export default function NewPartyPage() {
         )}
 
         <form action={formAction}>
+          {/* Hidden ID field */}
+          <input type="hidden" name="id" value={party.id} />
+
           {/* Name */}
           <div className="form-group">
             <label htmlFor="name" className="form-label">
@@ -38,8 +46,8 @@ export default function NewPartyPage() {
               name="name"
               type="text"
               required
+              defaultValue={party.name}
               className="form-input"
-              placeholder="مثال: شركة الإسراء للأدوية"
               dir="rtl"
             />
           </div>
@@ -49,8 +57,13 @@ export default function NewPartyPage() {
             <label htmlFor="type" className="form-label">
               النوع <span className="text-red-500">*</span>
             </label>
-            <select id="type" name="type" required className="form-select">
-              <option value="">اختر النوع</option>
+            <select
+              id="type"
+              name="type"
+              required
+              defaultValue={party.type}
+              className="form-select"
+            >
               <option value="SUPPLIER">مورد</option>
               <option value="CUSTOMER">عميل</option>
               <option value="MEDICINE_COMPANY">شركة أدوية</option>
@@ -65,8 +78,8 @@ export default function NewPartyPage() {
               id="phone"
               name="phone"
               type="tel"
+              defaultValue={party.phone ?? ""}
               className="form-input"
-              placeholder="010XXXXXXXX"
               dir="ltr"
             />
           </div>
@@ -78,6 +91,7 @@ export default function NewPartyPage() {
               id="address"
               name="address"
               type="text"
+              defaultValue={party.address ?? ""}
               className="form-input"
               dir="rtl"
             />
@@ -92,6 +106,7 @@ export default function NewPartyPage() {
               id="contactPerson"
               name="contactPerson"
               type="text"
+              defaultValue={party.contactPerson ?? ""}
               className="form-input"
               dir="rtl"
             />
@@ -104,6 +119,7 @@ export default function NewPartyPage() {
               id="notes"
               name="notes"
               rows={3}
+              defaultValue={party.notes ?? ""}
               className="form-textarea"
               dir="rtl"
             />
@@ -112,7 +128,12 @@ export default function NewPartyPage() {
           {/* Status */}
           <div className="form-group">
             <label htmlFor="status" className="form-label">الحالة</label>
-            <select id="status" name="status" className="form-select">
+            <select
+              id="status"
+              name="status"
+              defaultValue={party.status}
+              className="form-select"
+            >
               <option value="ACTIVE">نشط</option>
               <option value="INACTIVE">غير نشط</option>
             </select>
@@ -125,9 +146,9 @@ export default function NewPartyPage() {
               disabled={isPending}
               className="btn btn-primary"
             >
-              {isPending ? "جاري الحفظ..." : "حفظ"}
+              {isPending ? "جاري الحفظ..." : "حفظ التغييرات"}
             </button>
-            <Link href="/parties" className="btn btn-secondary">
+            <Link href={`/parties/${party.id}`} className="btn btn-secondary">
               إلغاء
             </Link>
           </div>

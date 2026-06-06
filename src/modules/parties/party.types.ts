@@ -65,13 +65,13 @@ export interface CreatePartyInput {
 }
 
 export interface UpdatePartyInput {
-  name?: string;
-  type?: PartyType;
-  phone?: string;
-  address?: string;
-  contactPerson?: string;
-  notes?: string;
-  status?: PartyStatus;
+  name?: string | null;
+  type?: PartyType | null;
+  phone?: string | null;
+  address?: string | null;
+  contactPerson?: string | null;
+  notes?: string | null;
+  status?: PartyStatus | null;
 }
 
 // ─── Filter / Search ─────────────────────────────────────────
