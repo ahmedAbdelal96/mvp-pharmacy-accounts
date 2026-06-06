@@ -1,13 +1,25 @@
+import { getCurrentUser } from "@/lib/auth/get-current-user";
+import TopBar from "./TopBar";
 import SidebarNav from "./SidebarNav";
+import { redirect } from "next/navigation";
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  // Server-side auth check — never trusts client
+  const user = await getCurrentUser();
+
+  // If not authenticated, middleware already redirected to /login
+  // but as a safety net, we also redirect here
+  if (!user) {
+    redirect("/login");
+  }
+
   return (
     <div className="flex min-h-screen">
-      {/* Sidebar — server shell with client nav */}
+      {/* Sidebar */}
       <aside className="w-64 bg-white border-l border-zinc-200 flex flex-col">
         {/* Logo / Brand */}
         <div className="p-4 border-b border-zinc-200">
@@ -27,20 +39,12 @@ export default function DashboardLayout({
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 min-h-screen">
-        {/* Top bar */}
-        <header className="bg-white border-b border-zinc-200 px-6 py-3 flex items-center justify-between">
-          <div />
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-zinc-600">مدير النظام</span>
-            <div className="w-8 h-8 rounded-full bg-zinc-200 flex items-center justify-center text-sm font-medium">
-              م
-            </div>
-          </div>
-        </header>
+      <main className="flex-1 min-h-screen flex flex-col">
+        {/* Top bar with user info + logout */}
+        <TopBar user={user} />
 
         {/* Page content */}
-        <div className="p-6">{children}</div>
+        <div className="p-6 flex-1">{children}</div>
       </main>
     </div>
   );

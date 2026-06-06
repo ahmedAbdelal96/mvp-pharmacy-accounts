@@ -35,7 +35,8 @@ export type Permission =
   | "transaction.create"
   | "transaction.reverse"
   | "statement.view"
-  | "report.view";
+  | "report.view"
+  | "settings.view";
 
 // ─── Login Credentials ────────────────────────────────────────
 

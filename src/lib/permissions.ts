@@ -15,22 +15,16 @@
  *   transaction.reverse
  *   statement.view
  *   report.view
+ *   settings.view
  *
- * IMPORTANT: Uses local auth types, NOT Prisma generated types.
- * This avoids importing Prisma runtime into client-side code.
+ * IMPORTANT: Permission and UserRole types are re-exported from auth.types
+ * to keep a single source of truth. This file defines the role-permission map.
  */
 
-import type { UserRole } from "@/modules/auth/auth.types";
+import type { UserRole, Permission } from "@/modules/auth/auth.types";
 
-export type Permission =
-  | "party.view"
-  | "party.create"
-  | "party.update"
-  | "transaction.view"
-  | "transaction.create"
-  | "transaction.reverse"
-  | "statement.view"
-  | "report.view";
+// Re-export for convenience — keeps lib/permissions as the permissions hub
+export type { Permission };
 
 const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   OWNER: [
@@ -42,6 +36,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "transaction.reverse",
     "statement.view",
     "report.view",
+    "settings.view",
   ],
   ACCOUNTANT: [
     "party.view",
@@ -52,8 +47,15 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     "transaction.reverse",
     "statement.view",
     "report.view",
+    "settings.view",
   ],
-  VIEWER: ["party.view", "transaction.view", "statement.view", "report.view"],
+  VIEWER: [
+    "party.view",
+    "transaction.view",
+    "statement.view",
+    "report.view",
+    "settings.view",
+  ],
 };
 
 export function hasPermission(role: UserRole, permission: Permission): boolean {
@@ -82,4 +84,8 @@ export function canViewStatement(role: UserRole): boolean {
 
 export function canViewReport(role: UserRole): boolean {
   return hasPermission(role, "report.view");
+}
+
+export function canViewSettings(role: UserRole): boolean {
+  return hasPermission(role, "settings.view");
 }
