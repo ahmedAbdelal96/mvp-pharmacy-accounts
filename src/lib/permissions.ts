@@ -15,9 +15,12 @@
  *   transaction.reverse
  *   statement.view
  *   report.view
+ *
+ * IMPORTANT: Uses local auth types, NOT Prisma generated types.
+ * This avoids importing Prisma runtime into client-side code.
  */
 
-import { UserRole } from "@/generated/prisma";
+import type { UserRole } from "@/modules/auth/auth.types";
 
 export type Permission =
   | "party.view"

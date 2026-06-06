@@ -154,6 +154,8 @@ model AccountTransaction {
   @@index([direction])
   @@index([status])
   @@index([createdById])
+  // Compound index for efficient balance calculation queries
+  @@index([partyId, direction, status])
 }
 
 // ============================================================

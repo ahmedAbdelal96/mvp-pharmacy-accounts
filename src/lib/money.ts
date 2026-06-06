@@ -1,10 +1,14 @@
 /**
  * Money utilities — all money values use Decimal internally.
  * NEVER use float for money calculations.
+ *
+ * IMPORTANT: This file does NOT import from @/generated/prisma
+ * to avoid leaking Prisma runtime into the client bundle.
+ * All domain types are imported from local module types.
  */
 
 import { Decimal } from "decimal.js";
-import { AccountTransactionDirection } from "@/generated/prisma";
+import type { AccountTransactionDirection } from "@/modules/account-transactions/account-transaction.types";
 
 // Configure Decimal.js for financial calculations
 Decimal.set({
