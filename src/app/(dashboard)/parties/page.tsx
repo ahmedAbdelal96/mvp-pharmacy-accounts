@@ -1,8 +1,12 @@
 import Link from "next/link";
 import { listParties, getPartySummaryForDashboard } from "@/modules/parties";
-import { PARTY_TYPE_LABELS, PARTY_STATUS_LABELS, type PartyType, type PartyStatus } from "@/modules/parties/party.types";
+import { PARTY_TYPE_LABELS, PARTY_STATUS_LABELS } from "@/modules/parties/party.types";
+import { partyFiltersSchema } from "@/modules/parties/party.validators";
 import { hasPermission } from "@/lib/permissions";
 import { getCurrentUser } from "@/lib/auth/get-current-user";
+
+// Opt out of static generation — requires DB
+export const dynamic = "force-dynamic";
 
 export default async function PartiesPage({
   searchParams,
@@ -16,11 +20,14 @@ export default async function PartiesPage({
     return null;
   }
 
-  const filters = {
+  // Validate searchParams with Zod — invalid params gracefully fall back to safe defaults
+  const parsed = partyFiltersSchema.safeParse({
     search: params.search,
-    type: params.type as PartyType | undefined,
-    status: params.status as PartyStatus | undefined,
-  };
+    type: params.type,
+    status: params.status,
+  });
+
+  const filters = parsed.success ? parsed.data : {};
 
   const [{ parties, total }, summary] = await Promise.all([
     listParties(filters),

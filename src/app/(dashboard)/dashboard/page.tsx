@@ -1,6 +1,9 @@
 import Link from "next/link";
 import { getPartySummaryForDashboard } from "@/modules/parties";
 
+// Opt out of static generation — requires DB
+export const dynamic = "force-dynamic";
+
 export default async function DashboardPage() {
   const summary = await getPartySummaryForDashboard();
 

@@ -12,6 +12,17 @@ export type ActionState =
 
 // ─── Create Party ────────────────────────────────────────────
 
+/**
+ * Server Action: Create a new party.
+ *
+ * SECURITY:
+ * - Validates input with Zod (createPartySchema)
+ * - Checks party.create permission via requirePermission in service
+ * - createdById comes from server session (never from client)
+ * - No balance is accepted or stored
+ *
+ * NOTE: redirect() must be called OUTSIDE try/catch because it throws internally.
+ */
 export async function createPartyAction(
   _prevState: ActionState | null,
   formData: FormData
@@ -40,21 +51,35 @@ export async function createPartyAction(
     };
   }
 
+  let partyId: string;
   try {
     const result = await createParty(parsed.data);
-    redirect(`/parties/${result.id}`);
+    partyId = result.id;
   } catch (err) {
-    const message =
-      err instanceof Error && err.message.includes("ليس لديك صلاحية")
-        ? err.message
-        : "حدث خطأ أثناء إضافة الطرف";
-
-    return { success: false, error: { code: "ACTION_ERROR", message } };
+    // Only permission/auth errors should reach here
+    return {
+      success: false,
+      error: {
+        code: "ACTION_ERROR",
+        message:
+          err instanceof Error && err.message.includes("ليس لديك صلاحية")
+            ? err.message
+            : "حدث خطأ أثناء إضافة الطرف",
+      },
+    };
   }
+
+  // redirect() throws internally — must be outside try/catch
+  redirect(`/parties/${partyId}`);
 }
 
 // ─── Update Party ─────────────────────────────────────────────
 
+/**
+ * Server Action: Update an existing party.
+ *
+ * NOTE: redirect() must be called OUTSIDE try/catch.
+ */
 export async function updatePartyAction(
   _prevState: ActionState | null,
   formData: FormData
@@ -93,17 +118,17 @@ export async function updatePartyAction(
 
   try {
     await updateParty(id, parsed.data);
-    redirect(`/parties/${id}`);
   } catch (err) {
-    const message =
-      err instanceof Error && err.message.includes("ليس لديك صلاحية")
-        ? err.message
-        : err instanceof Error && err.message.includes("غير موجود")
-        ? err.message
-        : "حدث خطأ أثناء تحديث الطرف";
-
+    let message = "حدث خطأ أثناء تحديث الطرف";
+    if (err instanceof Error) {
+      if (err.message.includes("ليس لديك صلاحية")) message = err.message;
+      else if (err.message.includes("غير موجود")) message = err.message;
+    }
     return { success: false, error: { code: "ACTION_ERROR", message } };
   }
+
+  // redirect() throws internally — must be outside try/catch
+  redirect(`/parties/${id}`);
 }
 
 // ─── Set Party Status ─────────────────────────────────────────

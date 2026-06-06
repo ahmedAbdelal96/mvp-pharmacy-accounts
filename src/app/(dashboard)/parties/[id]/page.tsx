@@ -1,4 +1,7 @@
 import Link from "next/link";
+
+// Opt out of static generation — requires DB
+export const dynamic = "force-dynamic";
 import { notFound } from "next/navigation";
 import { getParty } from "@/modules/parties";
 import {
