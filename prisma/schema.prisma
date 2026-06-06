@@ -115,16 +115,18 @@ model Party {
 // ============================================================
 // SOURCE OF TRUTH for all party balances.
 //
-// Balance calculation:
+// Balance calculation (V1 — simplified reversal):
 //   netBalance = sum(PARTY_OWES_US where status=POSTED)
 //              - sum(WE_OWE_PARTY where status=POSTED)
 //
-// IMPORTANT: Only status=POSTED transactions affect balance.
-// REVERSED transactions are excluded from balance calculation.
-// The reversalTransactionId link is for UI purposes only (linking
-// original to reversal in the audit trail), NOT for balance calculation.
-//
-// Posted transactions are IMMUTABLE. Corrections via reversal only.
+// IMPORTANT:
+//   - Only status=POSTED transactions affect balance.
+//   - REVERSED transactions are excluded from balance calculation.
+//   - REVERSED transactions remain visible in statements for audit.
+//   - Reversal changes ONLY: status → REVERSED + reversal audit fields.
+//   - No new opposite transaction is created during reversal (V1).
+//   - reversalTransactionId is optional / for future use (not used in V1 balance calc).
+//   - Posted transactions are IMMUTABLE. Corrections via reversal only.
 // ============================================================
 
 model AccountTransaction {

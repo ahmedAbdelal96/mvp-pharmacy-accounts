@@ -21,7 +21,11 @@ export const ACCOUNT_TRANSACTION_DIRECTION = {
   WE_OWE_PARTY: "WE_OWE_PARTY",
 } as const;
 
-/** Direction of a single transaction (not the balance). */
+/**
+ * Direction of a single transaction.
+ * - PARTY_OWES_US: The party owes us money (they are in debt to us) → عليه
+ * - WE_OWE_PARTY: We owe the party money (they have a credit with us) → له
+ */
 export type AccountTransactionDirection =
   (typeof ACCOUNT_TRANSACTION_DIRECTION)[keyof typeof ACCOUNT_TRANSACTION_DIRECTION];
 
@@ -44,22 +48,29 @@ export const ACCOUNT_TRANSACTION_STATUS = {
 
 /**
  * Status of a transaction.
- * Only POSTED transactions affect balance calculations.
- * REVERSED transactions are excluded from balance.
- * Both POSTED and REVERSED appear in the statement for audit.
+ * - POSTED: Active transaction. Affects balance and running balance.
+ * - REVERSED: Cancelled transaction. Does NOT affect balance.
+ *   Visible in statement for audit trail with a REVERSED badge.
+ *
+ * IMPORTANT: Only status=POSTED transactions are included in balance calculation.
+ * The reversalTransactionId field is NOT used in balance calculation.
  */
 export type AccountTransactionStatus =
   (typeof ACCOUNT_TRANSACTION_STATUS)[keyof typeof ACCOUNT_TRANSACTION_STATUS];
 
 // ─── Balance Side ─────────────────────────────────────────────
-// Balance side is derived from the net balance, NOT from any single transaction.
-// It represents the party's position relative to us.
+// Balance side represents the NET position of a party after all transactions.
+// It is derived from netBalance, NOT from any single transaction direction.
+//
+// netBalance > 0 → PARTY_OWES_US (عليه)  — party owes us
+// netBalance < 0 → WE_OWE_PARTY (له)    — we owe party
+// netBalance = 0 → ZERO (متوازن)        — settled
 
 export const BALANCE_SIDE = {
   /** Party owes us — netBalance > 0 — عليه */
-  PAYABLE: "PAYABLE",
+  PARTY_OWES_US: "PARTY_OWES_US",
   /** We owe party — netBalance < 0 — له */
-  RECEIVABLE: "RECEIVABLE",
+  WE_OWE_PARTY: "WE_OWE_PARTY",
   /** Fully settled — netBalance = 0 — متوازن */
   ZERO: "ZERO",
 } as const;
@@ -67,8 +78,8 @@ export const BALANCE_SIDE = {
 export type BalanceSide = (typeof BALANCE_SIDE)[keyof typeof BALANCE_SIDE];
 
 export const BALANCE_SIDE_LABEL: Record<BalanceSide, string> = {
-  PAYABLE: "عليه",
-  RECEIVABLE: "له",
+  PARTY_OWES_US: "عليه",
+  WE_OWE_PARTY: "له",
   ZERO: "متوازن",
 };
 
@@ -78,12 +89,16 @@ export interface PartyBalance {
   partyId: string;
   partyName: string;
   partyType: string;
-  /** Net balance as decimal string. Positive = PAYABLE, Negative = RECEIVABLE, Zero = ZERO */
+  /**
+   * Net balance as decimal string.
+   * Positive = party owes us (PARTY_OWES_US / عليه)
+   * Negative = we owe party (WE_OWE_PARTY / له)
+   * Zero     = settled (ZERO / متوازن)
+   */
   netBalance: string;
-  /** Balance side — derived from netBalance */
   side: BalanceSide;
-  totalOwed: string;    // sum of PARTY_OWES_US POSTED
-  totalCredit: string; // sum of WE_OWE_PARTY POSTED
+  totalOwed: string;    // sum of PARTY_OWES_US where status=POSTED
+  totalCredit: string; // sum of WE_OWE_PARTY where status=POSTED
 }
 
 export interface StatementRow {
@@ -94,10 +109,9 @@ export interface StatementRow {
   description: string;
   referenceNumber: string | null;
   notes: string | null;
-  /** Direction of this specific transaction */
   direction: AccountTransactionDirection;
   amount: string;          // Decimal as string
-  runningBalance: string;  // Decimal as string
+  runningBalance: string;  // Decimal as string — REVERSED rows contribute 0
   status: AccountTransactionStatus;
 }
 
@@ -105,8 +119,8 @@ export interface StatementSummary {
   partyId: string;
   partyName: string;
   partyType: string;
-  totalOwed: string;      // sum of PARTY_OWES_US POSTED
-  totalCredit: string;    // sum of WE_OWE_PARTY POSTED
+  totalOwed: string;      // sum of PARTY_OWES_US where status=POSTED
+  totalCredit: string;    // sum of WE_OWE_PARTY where status=POSTED
   netBalance: string;     // net = totalOwed - totalCredit
   side: BalanceSide;      // derived from netBalance
   transactionCount: number;
@@ -115,26 +129,26 @@ export interface StatementSummary {
 // ─── Helper Functions ─────────────────────────────────────────
 
 /**
- * Determine BalanceSide from a net balance Decimal.
+ * Determine BalanceSide from a net balance value.
  *
- * balance > 0 → PAYABLE (عليه) — party owes us
- * balance < 0 → RECEIVABLE (له) — we owe party
- * balance = 0 → ZERO (متوازن)
+ * Requires netBalance as a signed number:
+ *   > 0 → PARTY_OWES_US (عليه)  — party owes us
+ *   < 0 → WE_OWE_PARTY (له)    — we owe party
+ *   = 0 → ZERO (متوازن)
  *
- * NOTE: The balance passed here must already exclude REVERSED transactions
- * (i.e., it must be calculated from POSTED transactions only).
+ * NOTE: The netBalance must already exclude REVERSED transactions
+ * (calculated from status=POSTED transactions only).
  */
-export function deriveBalanceSide(
-  netBalance: string | number
-): BalanceSide {
+export function deriveBalanceSide(netBalance: string | number): BalanceSide {
   const n = Number(netBalance);
-  if (n > 0) return BALANCE_SIDE.PAYABLE;
-  if (n < 0) return BALANCE_SIDE.RECEIVABLE;
+  if (n > 0) return BALANCE_SIDE.PARTY_OWES_US;
+  if (n < 0) return BALANCE_SIDE.WE_OWE_PARTY;
   return BALANCE_SIDE.ZERO;
 }
 
 /**
  * Determine if a transaction's direction means it increases what the party owes us.
+ * (i.e., direction = PARTY_OWES_US)
  */
 export function isOwedByParty(direction: AccountTransactionDirection): boolean {
   return direction === "PARTY_OWES_US";
@@ -142,6 +156,7 @@ export function isOwedByParty(direction: AccountTransactionDirection): boolean {
 
 /**
  * Determine if a transaction's direction means we owe the party.
+ * (i.e., direction = WE_OWE_PARTY)
  */
 export function isOwedToParty(direction: AccountTransactionDirection): boolean {
   return direction === "WE_OWE_PARTY";

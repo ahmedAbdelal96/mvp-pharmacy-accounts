@@ -1,8 +1,9 @@
-# Reversal and Balance Policy
+# Reversal and Balance Policy (Corrected V1)
 
 **Date:** 2026-06-06
 **Project:** Pharmacy Accounts Lite — MVP
-**Status:** FINAL — Must be implemented exactly as specified
+**Status:** FINAL — V1 Simplified Reversal
+**Supersedes:** Previous reversal policy that incorrectly created opposite POSTED transactions
 
 ---
 
@@ -12,79 +13,94 @@
 >
 > **Balance filter = `status = POSTED` only.**
 >
-> Posted transactions are **immutable**. Corrections happen through reversal transactions.
+> Posted transactions are **immutable**. Corrections happen through **reversal** (status change + audit).
 
 ---
 
-## 2. Reversal Policy
+## 2. The Math Problem with "Opposite POSTED Transaction"
 
-### 2.1 What Happens During Reversal
+The previous version of this policy incorrectly stated:
+> "Create an opposite POSTED transaction during reversal"
 
-When a transaction is reversed:
+This produces a **non-zero net balance**, which is wrong:
 
-1. **Original transaction** — `status` changes from `POSTED` → `REVERSED`. The record is **never deleted or modified** in any other way.
-2. **Reversal transaction** — A **new** transaction is created with the **opposite direction** and the **same amount**. It starts with `status = POSTED`.
-3. **Both transactions remain visible** in the party statement (for full audit trail).
-4. **The `reversalTransactionId`** on the original points to the reversal transaction (for UI linking purposes).
-5. **Reversal is one-way.** A reversal transaction itself **cannot be reversed** again. The system rejects any attempt to reverse an already-reversed transaction.
+```
+Original: PARTY_OWES_US 1000, status → REVERSED (excluded)
+New reversal: WE_OWE_PARTY 1000, status = POSTED (included)
+Balance = -1000  ← NOT ZERO — policy was WRONG
+```
 
-### 2.2 Reversal Fields
+The correct reversal for `PARTY_OWES_US` is **not** `WE_OWE_PARTY` as a POSTED transaction.
+The correct reversal is a **status-only change**.
+
+---
+
+## 3. Reversal Policy (V1 — Simplified)
+
+### 3.1 What Happens During Reversal
+
+When a transaction is reversed in V1:
+
+1. **Original transaction** — `status` changes from `POSTED` → `REVERSED`
+2. **No new transaction is created**
+3. **Reversal fields are populated:**
+   - `reversedById` = user who performed the reversal
+   - `reversedAt` = timestamp
+   - `reversalReason` = required reason text
+
+### 3.2 Reversal Fields
 
 ```
 original.status            = REVERSED
 original.reversedById      = user who performed reversal
 original.reversedAt        = timestamp of reversal
 original.reversalReason    = required reason text
-original.reversalTransactionId = FK → reversal transaction
-
-reversal.status            = POSTED
-reversal.reversalTransactionId = FK → original transaction (self-reference)
+original.reversalTransactionId = (optional, for future use / manual links)
 ```
 
-### 2.3 Rules
+### 3.3 Rules
 
 | Rule | Detail |
 |------|--------|
 | Reason required | Reversal must include a `reversalReason`. No reversals without a reason. |
-| Reversal creates opposite | If original is `PARTY_OWES_US`, reversal is `WE_OWE_PARTY` (and vice versa). |
-| Same amount | Reversal amount equals original amount. |
-| Reversal is POSTED | The reversal transaction itself has `status = POSTED` and affects balance. |
-| Original is REVERSED | The original transaction has `status = REVERSED` and does NOT affect balance. |
-| No double-reversal | An already-reversed transaction cannot be reversed again. |
-| Reversal transaction is not reversible | The reversal transaction itself cannot be reversed. |
-| Both visible in statement | Original (REVERSED) and reversal (POSTED) both appear in the statement for audit. |
+| Status changes only | No new transaction is created. Only `status` and audit fields change. |
+| REVERSED excluded from balance | `status = REVERSED` transactions are excluded from ALL balance calculations. |
+| REVERSED visible in statement | Original transaction remains visible in the statement with a REVERSED badge for audit. |
+| Running balance unaffected | REVERSED rows appear in statement but do not contribute to the running balance column. |
+| Cannot reverse twice | An already REVERSED transaction cannot be reversed again. |
+| Immutability | No field on a POSTED transaction is ever modified except for reversal. |
 
-### 2.4 Reversal Examples
-
-#### Customer — Payment Reversal
+### 3.4 Why This Works
 
 ```
-Step 1: Customer pays 1000 (PARTY_OWES_US, 1000, POSTED)
-  → Balance: عليه 1000
+Original: PARTY_OWES_US 1000, status = POSTED
+  → Included in balance: +1000 → balance = +1000 (عليه)
 
-Step 2: Reverse the payment (WE_OWE_PARTY, 1000, POSTED)
-  → Original becomes REVERSED (no balance effect)
-  → Reversal is POSTED (adds له 1000)
-  → Net effect: 1000 - 1000 = 0 → متوازن
+Original reversed: status → REVERSED
+  → Excluded from balance: +0
+  → Balance = 0 → متوازن ✓
 ```
 
-#### Supplier — Debt Reversal
-
 ```
-Step 1: Supplier has له 5000 (WE_OWE_PARTY, 5000, POSTED)
-  → Balance: له 5000
+Original: WE_OWE_PARTY 5000, status = POSTED
+  → Included in balance: -5000 → balance = -5000 (له)
 
-Step 2: Reverse the debt (PARTY_OWES_US, 5000, POSTED)
-  → Original becomes REVERSED (no balance effect)
-  → Reversal is POSTED (adds عليه 5000)
-  → Net effect: 5000 - 5000 = 0 → متوازن
+Original reversed: status → REVERSED
+  → Excluded from balance: +0
+  → Balance = 0 → متوازن ✓
 ```
+
+The `reversalTransactionId` field in the schema is kept for:
+- Future: linking to a manually-created accounting reversal entry
+- Current: optional audit reference (can be left null)
+
+It is **NOT required** for balance calculation and **does not affect** the balance formula.
 
 ---
 
-## 3. Balance Policy
+## 4. Balance Policy
 
-### 3.1 Balance Formula
+### 4.1 Balance Formula
 
 ```
 netBalance = sum(amount where direction=PARTY_OWES_US AND status=POSTED)
@@ -93,153 +109,162 @@ netBalance = sum(amount where direction=PARTY_OWES_US AND status=POSTED)
 
 **Only `status = POSTED` transactions are included in balance calculation.**
 
-The `reversalTransactionId` field is **not used** in balance calculation. It exists only for UI linking (showing "This transaction was reversed by #X").
+### 4.2 Balance Display
 
-### 3.2 Balance Display
-
-| netBalance | Side | Arabic Label | Meaning |
-|-----------|------|-------------|---------|
-| > 0 | `PAYABLE` | عليه | Party owes us (receivable) |
-| < 0 | `RECEIVABLE` | له | We owe party (payable) |
+| netBalance | BalanceSide | Arabic | Meaning |
+|-----------|-------------|--------|---------|
+| > 0 | `PARTY_OWES_US` | عليه | Party owes us — we have a receivable |
+| < 0 | `WE_OWE_PARTY` | له | We owe the party — we have a payable |
 | = 0 | `ZERO` | متوازن | Fully settled |
 
-### 3.3 Why `status` is the Filter (Not Just Exclusion)
-
-Using `status = POSTED` as the filter is the safest approach because:
-
-- **Original transaction** (`status = REVERSED`) — filtered out by status
-- **Reversal transaction** (`status = POSTED`) — included, adds opposite amount
-- **Net effect** — exactly zero, as required
-
-This means:
-- You do NOT need to check `reversalTransactionId` to calculate balances correctly
-- If a reversal transaction exists without the original being marked REVERSED, the balance is WRONG — and `status` is the single source of truth for that check
-- The audit trail is complete: both transactions appear in the statement
-
-### 3.4 Statement Display
+### 4.3 Statement Display
 
 In the party statement (كشف حساب):
 
-- **All transactions appear** — both original and reversal, regardless of status
-- **Running balance** is calculated per-row using the same `status = POSTED` filter
-- **Status column** shows `POSTED` or `REVERSED` per transaction
-- **REVERSED transactions** appear with a visual indicator (e.g., strikethrough or badge) but are **not excluded** from the statement
+- **All transactions appear** — both POSTED and REVERSED
+- **REVERSED rows** show a badge (e.g., "تم العكس") and are excluded from running balance
+- **Running balance column** uses only POSTED transactions
+- **Status column** clearly shows `POSTED` or `REVERSED`
 
-### 3.5 Receivables vs Payables
+### 4.4 Why `status` is the Sole Filter
 
-```
-Receivables (تقرير الأطراف التي عليها) = parties where netBalance > 0 (PAYABLE)
-Payables    (تقرير الأطراف التي لها)   = parties where netBalance < 0 (RECEIVABLE)
-```
-
----
-
-## 4. Schema Implementation Note
-
-In `prisma/schema.prisma`:
-
-```prisma
-// Balance = sum(PARTY_OWES_US where status=POSTED)
-//         - sum(WE_OWE_PARTY where status=POSTED)
-// Only status=POSTED transactions affect balance.
-// The reversalTransactionId link is for UI purposes only,
-// not for balance calculation.
-```
+- REVERSED transactions are excluded by `status = POSTED`
+- No need to check `reversalTransactionId` for balance calculation
+- Complete audit trail: both original and its REVERSED status are visible
 
 ---
 
-## 5. Domain Type Mapping
+## 5. Future Extension (Outside V1 Scope)
+
+If a future version needs full double-entry accounting with a proper journal:
+
+- A reversal would create a new `POSTED` transaction with the **opposite direction**
+- Both original and reversal would be `POSTED` and would **both** appear in balance
+- The **net** of the two would be zero
+- This requires a proper accounting module design before implementing
+- The current schema's `reversalTransactionId` can support this when needed
+
+**For V1, this is out of scope.**
+
+---
+
+## 6. Domain Type Mapping
 
 | Concept | Type | Value |
 |---------|------|-------|
-| Transaction owes us | `AccountTransactionDirection` | `PARTY_OWES_US` |
-| Transaction we owe | `AccountTransactionDirection` | `WE_OWE_PARTY` |
+| Transaction: party owes us | `AccountTransactionDirection` | `PARTY_OWES_US` |
+| Transaction: we owe party | `AccountTransactionDirection` | `WE_OWE_PARTY` |
 | Transaction active | `AccountTransactionStatus` | `POSTED` |
 | Transaction reversed | `AccountTransactionStatus` | `REVERSED` |
-| Balance: party owes us | `BalanceSide` | `PAYABLE` (عليه) |
-| Balance: we owe party | `BalanceSide` | `RECEIVABLE` (له) |
+| Balance: party owes us | `BalanceSide` | `PARTY_OWES_US` (عليه) |
+| Balance: we owe party | `BalanceSide` | `WE_OWE_PARTY` (له) |
 | Balance: settled | `BalanceSide` | `ZERO` (متوازن) |
+
+**Naming rationale:** `BalanceSide` uses the same labels as `AccountTransactionDirection` to avoid confusion. `PARTY_OWES_US` means "the balance says the party owes us" (the party is in debt to us).
 
 ---
 
-## 6. Test Cases
+## 7. Test Cases
 
-### 6.1 Customer Debt Flow
+### 7.1 Customer — Initial Debt
 
 ```
 1. Customer bought items, owes 1000
    Transaction: PARTY_OWES_US 1000, POSTED
-   Balance: عليه 1000 ✓
-
-2. Customer paid 400
-   Transaction: WE_OWE_PARTY 400, POSTED
-   Balance: عليه 600 ✓
-
-3. Customer paid remaining 600
-   Transaction: WE_OWE_PARTY 600, POSTED
-   Balance: متوازن ✓
+   Balance: PARTY_OWES_US 1000 → عليه 1000 ✓
 ```
 
-### 6.2 Supplier Debt Flow
+### 7.2 Customer — Partial Payment
+
+```
+2. Customer paid 400
+   Transaction: WE_OWE_PARTY 400, POSTED
+   Balance: PARTY_OWES_US 600 → عليه 600 ✓
+```
+
+### 7.3 Customer — Full Settlement
+
+```
+3. Customer paid remaining 600
+   Transaction: WE_OWE_PARTY 600, POSTED
+   Balance: ZERO → متوازن ✓
+```
+
+### 7.4 Customer — REVERSED Row in Statement (Audit Trail)
+
+```
+1. Customer owes 1000
+   Transaction: PARTY_OWES_US 1000, POSTED
+   Running balance: عليه 1000
+
+2. Wrong amount! Reverse it
+   status → REVERSED, reversalReason = "wrong amount"
+   Statement shows:
+   Row 1: PARTY_OWES_US 1000 [REVERSED badge] ← excluded from running balance
+   Balance: ZERO → متوازن ✓
+   Audit: both original and its REVERSED status are visible
+```
+
+### 7.5 Supplier — Initial Debt (We Owe Supplier)
 
 ```
 1. Bought from supplier, owe 5000
    Transaction: WE_OWE_PARTY 5000, POSTED
-   Balance: له 5000 ✓
+   Balance: WE_OWE_PARTY 5000 → له 5000 ✓
+```
 
+### 7.6 Supplier — Partial Payment
+
+```
 2. Paid supplier 2000
    Transaction: PARTY_OWES_US 2000, POSTED
-   Balance: له 3000 ✓
+   Balance: WE_OWE_PARTY 3000 → له 3000 ✓
 ```
 
-### 6.3 Reversal — Customer Payment
+### 7.7 Supplier — REVERSED Row in Statement
 
 ```
-1. Customer paid 1000
-   Transaction: PARTY_OWES_US 1000, POSTED
-   Balance: عليه 1000
-
-2. Mistake! Reverse the payment
-   Original: status → REVERSED, reversalReason = "wrong amount"
-   Reversal: WE_OWE_PARTY 1000, POSTED
-   Balance: متوازن ✓
-   Statement shows BOTH transactions (for audit)
-```
-
-### 6.4 Reversal — Supplier Debt
-
-```
-1. Supplier invoice له 5000
+1. Supplier له 5000
    Transaction: WE_OWE_PARTY 5000, POSTED
    Balance: له 5000
 
 2. Wrong invoice! Reverse it
-   Original: status → REVERSED
-   Reversal: PARTY_OWES_US 5000, POSTED
-   Balance: متوازن ✓
+   status → REVERSED, reversalReason = "wrong invoice"
+   Statement shows:
+   Row 1: WE_OWE_PARTY 5000 [REVERSED badge] ← excluded from running balance
+   Balance: ZERO → متوازن ✓
 ```
 
-### 6.5 Double-Reversal Prevention
+### 7.8 Double-Reversal Prevention
 
 ```
 1. Transaction A: PARTY_OWES_US 1000, POSTED
-2. Reverse A → REVERSED, reversal B: WE_OWE_PARTY 1000, POSTED
-3. Try to reverse B → MUST REJECT (B is a reversal transaction)
-4. Try to reverse A again → MUST REJECT (A already REVERSED)
+2. Reverse A → status = REVERSED
+3. Try to reverse A again → MUST REJECT (already REVERSED) ✓
+4. Try to reverse the "reversal" (there is no separate reversal transaction) → N/A
+```
+
+### 7.9 Cannot Reverse a REVERSED Transaction
+
+```
+1. Transaction A: PARTY_OWES_US 1000, POSTED
+2. Reverse A → REVERSED
+3. Attempt to reverse A again → Error: "هذه الحركة تم عكسها بالفعل" ✓
 ```
 
 ---
 
-## 7. Confirmed Scope
+## 8. Confirmed Scope
 
 | Rule | Status |
 |------|--------|
 | No `Party.balance` field | ✅ Confirmed |
 | Balance from `AccountTransaction` only | ✅ Confirmed |
 | `status = POSTED` is balance filter | ✅ Confirmed |
-| `reversalTransactionId` for UI only | ✅ Confirmed |
-| Posted transactions immutable | ✅ Confirmed |
-| Corrections via reversal only | ✅ Confirmed |
-| Both original and reversal visible in statement | ✅ Confirmed |
+| Reversal is status change only (V1) | ✅ Confirmed |
+| No opposite POSTED transaction created on reversal | ✅ Confirmed |
+| REVERSED transactions visible in statement | ✅ Confirmed |
+| REVERSED transactions do not affect running balance | ✅ Confirmed |
 | No Tenant / tenantId | ✅ Confirmed |
 | No inventory / POS / products | ✅ Confirmed |
+| No full double-entry accounting | ✅ Confirmed |

@@ -5,6 +5,17 @@
  * IMPORTANT: This file does NOT import from @/generated/prisma
  * to avoid leaking Prisma runtime into the client bundle.
  * All domain types are imported from local module types.
+ *
+ * Balance Convention:
+ *   Balance > 0 (positive)  → PARTY_OWES_US (عليه)  — party owes us
+ *   Balance < 0 (negative)  → WE_OWE_PARTY (له)    — we owe party
+ *   Balance = 0             → ZERO (متوازن)
+ *
+ * Reversal Convention (V1):
+ *   Reversal changes status POSTED → REVERSED.
+ *   No new transaction is created.
+ *   REVERSED transactions are excluded from balance.
+ *   REVERSED transactions appear in statement for audit but do not affect running balance.
  */
 
 import { Decimal } from "decimal.js";
@@ -54,29 +65,26 @@ export function parseMoney(value: string): Decimal {
  * Balance = sum(PARTY_OWES_US where status=POSTED)
  *         - sum(WE_OWE_PARTY where status=POSTED)
  *
- * IMPORTANT: Callers must filter to status=POSTED before passing.
- * REVERSED transactions must be excluded — they do not affect balance.
+ * IMPORTANT:
+ * - Callers MUST filter to status=POSTED before passing transactions.
+ * - REVERSED transactions must be excluded — they do not affect balance.
+ * - No new opposite transaction is created during reversal in V1.
  *
- * Returns:
- *   Positive balance → party owes us (PAYABLE / عليه)
- *   Negative balance → we owe party (RECEIVABLE / له)
- *   Zero              → fully settled (ZERO / متوازن)
- *
- * @example
- * // Customer: paid 1000 then reversed
- * const txs = [
- *   { direction: "PARTY_OWES_US", amount: 1000 }, // POSTED
- *   { direction: "WE_OWE_PARTY", amount: 1000 },  // reversal, POSTED
- * ]
- * calculateBalance(txs) // = 0 → متوازن ✓
+ * Returns a Decimal (can be positive, negative, or zero):
+ *   Positive → PARTY_OWES_US (عليه) — party owes us
+ *   Negative → WE_OWE_PARTY (له)   — we owe party
+ *   Zero     → ZERO (متوازن)
  *
  * @example
- * // Supplier: له 5000 then reversed
+ * // Customer owes 1000, then reversed
  * const txs = [
- *   { direction: "WE_OWE_PARTY", amount: 5000 },    // POSTED
- *   { direction: "PARTY_OWES_US", amount: 5000 },  // reversal, POSTED
+ *   { direction: "PARTY_OWES_US", amount: 1000 }, // status=POSTED
  * ]
- * calculateBalance(txs) // = 0 → متوازن ✓
+ * calculateBalance(txs) // = 1000 → عليه 1000
+ *
+ * // Same transaction now reversed (excluded from query)
+ * const posted = [] // empty — the reversed one was filtered out
+ * calculateBalance(posted) // = 0 → متوازن
  */
 export function calculateBalance(
   transactions: Array<{
@@ -94,37 +102,39 @@ export function calculateBalance(
 }
 
 /**
- * Determine the BalanceSide from a net balance Decimal.
+ * Determine BalanceSide from a net balance Decimal.
  *
- * balance > 0 → PAYABLE (عليه) — party owes us
- * balance < 0 → RECEIVABLE (له) — we owe party
+ * balance > 0 → PARTY_OWE_US (عليه)  — party owes us
+ * balance < 0 → WE_OWE_PARTY (له)   — we owe party
  * balance = 0 → ZERO (متوازن)
  */
 export function getBalanceSide(balance: Decimal): BalanceSide {
-  if (balance.isPositive()) return "PAYABLE";
-  if (balance.isNegative()) return "RECEIVABLE";
+  if (balance.isPositive()) return "PARTY_OWES_US";
+  if (balance.isNegative()) return "WE_OWE_PARTY";
   return "ZERO";
 }
 
 /**
- * Get display label for a balance.
- * PAYABLE   = عليه (party owes us)
- * RECEIVABLE = له (we owe party)
- * ZERO      = متوازن (settled)
+ * Get Arabic display label from BalanceSide.
  */
 export function getBalanceLabel(side: BalanceSide): string {
-  if (side === "PAYABLE") return "عليه";
-  if (side === "RECEIVABLE") return "له";
+  if (side === "PARTY_OWES_US") return "عليه";
+  if (side === "WE_OWE_PARTY") return "له";
   return "متوازن";
 }
 
 /**
- * Full balance display with amount and label.
+ * Full balance display object.
  *
  * @example
- * displayBalance(new Decimal(600))   // { label: "عليه", side: "PAYABLE", amount: 600 }
- * displayBalance(new Decimal(-300))  // { label: "له",   side: "RECEIVABLE", amount: 300 }
- * displayBalance(new Decimal(0))     // { label: "متوازن", side: "ZERO", amount: 0 }
+ * displayBalance(new Decimal(600))
+ * // { label: "عليه", side: "PARTY_OWES_US", amount: 600 }
+ *
+ * displayBalance(new Decimal(-300))
+ * // { label: "له", side: "WE_OWE_PARTY", amount: 300 }
+ *
+ * displayBalance(new Decimal(0))
+ * // { label: "متوازن", side: "ZERO", amount: 0 }
  */
 export type BalanceDisplay = {
   label: string;
@@ -146,17 +156,24 @@ export function displayBalance(balance: Decimal): BalanceDisplay {
 // ─── Running Balance ──────────────────────────────────────────
 
 /**
- * Calculate running balance for a statement (ordered by date then createdAt).
- * Returns array with running balance after each transaction.
+ * Calculate running balance for a statement.
  *
- * IMPORTANT: Only POSTED transactions should be included in this array.
- * REVERSED transactions should be filtered out before calling.
+ * IMPORTANT:
+ * - Only POSTED transactions should be included in this function.
+ * - REVERSED transactions must be filtered out BEFORE calling.
+ * - REVERSED rows appear in the statement UI (for audit) but do NOT
+ *   contribute to the running balance column.
+ *
+ * The sorted array should already exclude REVERSED transactions.
+ * If a REVERSED row needs to appear in the statement display, it should
+ * be merged in after running balance is calculated, with running balance
+ * unchanged from the previous POSTED row.
  *
  * @example
- * // Customer statement with reversal:
- * // Row 1: PARTY_OWES_US 1000  → running = 1000 (عليه)
- * // Row 2: WE_OWE_PARTY 1000  → running = 0   (متوازن)  [reversal of row 1]
- * // Both appear in statement; net = 0 ✓
+ * // Customer statement:
+ * // POSTED: PARTY_OWES_US 1000  → running = 1000 (عليه)
+ * // REVERSED: ...[REVERSED badge]... ← excluded; running stays 1000
+ * // POSTED: WE_OWE_PARTY 1000   → running = 0 (متوازن)
  */
 export function calculateRunningBalance(
   transactions: Array<{
